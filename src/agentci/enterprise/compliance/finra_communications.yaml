@@ -1,0 +1,21 @@
+# FINRA Communications Criteria
+name: finra_communications
+version: "1.0"
+framework: FINRA Rules 2210, 2241 (Financial Industry Regulatory Authority)
+
+criteria:
+  - name: fair_and_balanced
+    description: "Communications are fair, balanced, and not misleading"
+    weight: 0.25
+
+  - name: not_misleading
+    description: "No exaggerated claims, guarantees of performance, or omission of material risks"
+    weight: 0.3
+
+  - name: risk_disclosure
+    description: "Investment risks are clearly disclosed alongside potential benefits"
+    weight: 0.25
+
+  - name: suitability
+    description: "Recommendations consider the customer's investment profile and risk tolerance"
+    weight: 0.2

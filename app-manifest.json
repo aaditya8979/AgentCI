@@ -1,0 +1,26 @@
+{
+  "name": "AgentCI",
+  "url": "https://agentci.dev",
+  "hook_attributes": {
+    "url": "https://api.agentci.dev/webhook/github",
+    "active": true
+  },
+  "redirect_url": "https://agentci.dev/install/callback",
+  "description": "CI/CD quality gate for LLM agents. Blocks bad AI changes before they reach production.",
+  "public": true,
+  "default_events": [
+    "pull_request",
+    "push",
+    "check_suite",
+    "check_run",
+    "issue_comment"
+  ],
+  "default_permissions": {
+    "checks": "write",
+    "pull_requests": "write",
+    "contents": "read",
+    "statuses": "write",
+    "metadata": "read",
+    "issues": "write"
+  }
+}

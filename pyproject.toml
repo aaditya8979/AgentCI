@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentci"
+version = "0.2.0"
+description = "Enterprise-Grade CI/CD Quality Gate for LLM Agents"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["llm", "agents", "ci-cd", "evaluation", "quality-gate", "testing", "ai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "click>=8.1.7",
+    "pydantic>=2.7.0",
+    "scipy>=1.12.0",
+    "numpy>=1.26.0",
+    "openai>=1.20.0",
+    "google-genai>=1.0.0",
+    "anthropic>=0.25.0",
+    "rich>=13.7.0",
+    "pyyaml>=6.0.1",
+    "httpx>=0.27.0",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",
+    "PyJWT[crypto]>=2.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/agentci/agentci"
+Documentation = "https://docs.agentci.dev"
+Repository = "https://github.com/agentci/agentci"
+"Issue Tracker" = "https://github.com/agentci/agentci/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+agentci = "agentci.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

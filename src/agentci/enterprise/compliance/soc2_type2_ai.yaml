@@ -1,0 +1,21 @@
+# SOC 2 Type II — AI Service Criteria
+name: soc2_type2_ai
+version: "1.0"
+framework: SOC 2 Type II (AICPA Trust Services Criteria)
+
+criteria:
+  - name: availability
+    description: "System is available for operation as committed or agreed"
+    weight: 0.2
+
+  - name: confidentiality
+    description: "Information designated as confidential is protected as committed or agreed"
+    weight: 0.25
+
+  - name: processing_integrity
+    description: "System processing is complete, valid, accurate, timely, and authorized"
+    weight: 0.25
+
+  - name: privacy
+    description: "Personal information is collected, used, retained, disclosed, and disposed of properly"
+    weight: 0.3
