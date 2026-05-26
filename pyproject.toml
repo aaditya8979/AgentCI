@@ -57,6 +57,12 @@ agentci = "agentci.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.pytest.ini_options]
+addopts = "-m 'not integration'"
+markers = [
+    "integration: tests requiring infrastructure (Postgres, Redis, Temporal)",
+]
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"

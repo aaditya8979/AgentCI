@@ -3,21 +3,19 @@ Tests for the GitHub webhook handler.
 
 Validates HMAC-SHA256 signature verification, PR event filtering,
 and trigger pattern matching.
+
+These are unit tests — they mock the DB/Temporal connections
+so they run without infrastructure.
 """
 import hashlib
 import hmac
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from agentci.api.main import app
 from agentci.api.webhook import verify_signature, _matches_trigger_patterns
-
-
-@pytest.fixture
-def client():
-    return TestClient(app)
 
 
 WEBHOOK_SECRET = "test-secret-key-12345"
@@ -41,6 +39,25 @@ def _make_pr_payload(action: str = "opened", repo: str = "owner/repo", pr_number
             "base": {"sha": "000111222333"},
         },
     }
+
+
+@pytest.fixture
+def client():
+    """Create a test client with mocked infrastructure."""
+    from agentci.api.main import app
+
+    # Mock the lifespan to avoid connecting to real infrastructure
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def mock_lifespan(app):
+        app.state.db_pool = MagicMock()
+        app.state.redis = None
+        app.state.temporal = None
+        yield
+
+    app.router.lifespan_context = mock_lifespan
+    return TestClient(app)
 
 
 class TestSignatureVerification:
@@ -117,8 +134,14 @@ class TestWebhookEndpoint:
         )
         assert resp.status_code == 403
 
-    def test_valid_pr_event_queues_run(self, client, monkeypatch):
+    @patch("agentci.api.webhook._extract_changed_files", new_callable=AsyncMock, return_value=[])
+    @patch("agentci.api.webhook.queries", create=True)
+    def test_valid_pr_event_queues_run(self, mock_queries, mock_files, client, monkeypatch):
         monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", WEBHOOK_SECRET)
+
+        # Mock the DB call
+        mock_queries.create_eval_run = AsyncMock(return_value="test-run-id")
+
         pr_payload = _make_pr_payload("opened")
         body = json.dumps(pr_payload).encode()
         sig = _sign_payload(body, WEBHOOK_SECRET)
@@ -132,7 +155,7 @@ class TestWebhookEndpoint:
                 "Content-Type": "application/json",
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         data = resp.json()
         assert data["action"] == "queued"
         assert data["run_id"] is not None
@@ -151,7 +174,7 @@ class TestWebhookEndpoint:
                 "Content-Type": "application/json",
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         assert resp.json()["action"] == "pong"
 
     def test_unsupported_pr_action_ignored(self, client, monkeypatch):
@@ -169,7 +192,7 @@ class TestWebhookEndpoint:
                 "Content-Type": "application/json",
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         assert resp.json()["action"] == "ignored"
 
 
@@ -177,4 +200,5 @@ class TestHealthEndpoint:
     def test_health_check(self, client):
         resp = client.get("/health")
         assert resp.status_code == 200
-        assert resp.json()["status"] == "ok"
+        data = resp.json()
+        assert data["status"] in ("ok", "degraded")

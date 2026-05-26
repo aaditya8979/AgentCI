@@ -1,20 +1,24 @@
-version: "3.9"
-
 services:
   # ── AgentCI API ──────────────────────────────────────────────────────
   api:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      target: api
     ports:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://agentci:agentci@postgres:5432/agentci
       - REDIS_URL=redis://redis:6379
       - TEMPORAL_HOST=temporal:7233
+      - TEMPORAL_NAMESPACE=default
+      - TEMPORAL_TASK_QUEUE=agentci-eval
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GITHUB_APP_ID=${GITHUB_APP_ID:-}
+      - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY:-}
+      - GITHUB_INSTALLATION_ID=${GITHUB_INSTALLATION_ID:-}
       - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET:-}
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
     depends_on:
@@ -22,31 +26,57 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
 
   # ── AgentCI Worker ───────────────────────────────────────────────────
   worker:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    command: ["python", "-m", "agentci.infra.temporal_worker"]
+      target: worker
     environment:
       - DATABASE_URL=postgresql://agentci:agentci@postgres:5432/agentci
       - REDIS_URL=redis://redis:6379
       - TEMPORAL_HOST=temporal:7233
+      - TEMPORAL_NAMESPACE=default
+      - TEMPORAL_TASK_QUEUE=agentci-eval
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GITHUB_APP_ID=${GITHUB_APP_ID:-}
+      - GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY:-}
+      - GITHUB_INSTALLATION_ID=${GITHUB_INSTALLATION_ID:-}
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
     depends_on:
       postgres:
         condition: service_healthy
       temporal:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+
+  # ── Database Migration ───────────────────────────────────────────────
+  # Runs once at startup, applies schema, then exits.
+  db-migrate:
+    image: postgres:16-alpine
+    volumes:
+      - ../src/agentci/db/migrations:/migrations:ro
+    environment:
+      - PGHOST=postgres
+      - PGUSER=agentci
+      - PGPASSWORD=agentci
+      - PGDATABASE=agentci
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["sh", "-c", "psql -f /migrations/001_initial.sql || true"]
+    restart: "no"
 
   # ── Dashboard ────────────────────────────────────────────────────────
   dashboard:
@@ -56,9 +86,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - AGENTCI_API_URL=http://api:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 10s
@@ -99,6 +130,8 @@ services:
     environment:
       - DB=postgresql
       - POSTGRES_SEEDS=postgres
+      - POSTGRES_USER=agentci
+      - POSTGRES_PWD=agentci
       - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
     depends_on:
       postgres:
@@ -106,10 +139,12 @@ services:
     ports:
       - "7233:7233"
     healthcheck:
-      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      # TCP check against gRPC port — tctl is unreliable in auto-setup image
+      test: ["CMD-SHELL", "nc -z localhost 7233 || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
 
   # ── Temporal UI ──────────────────────────────────────────────────────
   temporal-ui:

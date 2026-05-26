@@ -2,16 +2,17 @@
 GitHub webhook receiver with HMAC-SHA256 signature verification.
 
 Handles pull_request events (opened, synchronize, reopened),
-filters against trigger patterns, and enqueues eval jobs.
+filters against trigger patterns, and enqueues eval jobs
+via Temporal workflow or direct database write.
 """
 from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import os
 import uuid
-from fnmatch import fnmatch
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -67,7 +68,56 @@ def _matches_trigger_patterns(
     return False
 
 
-@router.post("/github", response_model=WebhookResponse)
+async def _extract_changed_files(
+    repo: str,
+    pr_number: int,
+    request: Request,
+) -> list[str]:
+    """
+    Extract changed file paths by calling the GitHub API.
+
+    Uses the GitHub App installation token to fetch the list of files
+    changed in a PR, handling pagination (up to 300 files).
+    """
+    from ..reporter.github import GitHubClient
+
+    try:
+        # Get the GitHub client — try to use credentials from env
+        gh = GitHubClient()
+        headers = await gh._headers()
+        client = await gh._get_client()
+
+        files: list[str] = []
+        page = 1
+        while True:
+            resp = await client.get(
+                f"https://api.github.com/repos/{repo}/pulls/{pr_number}/files",
+                headers=headers,
+                params={"per_page": 100, "page": page},
+            )
+            resp.raise_for_status()
+            page_files = resp.json()
+            if not page_files:
+                break
+            files.extend(f["filename"] for f in page_files)
+            # Stop after 3 pages (300 files) to avoid excessive API calls
+            if len(page_files) < 100 or page >= 3:
+                break
+            page += 1
+
+        await gh.close()
+        logger.info("Fetched %d changed files for %s#%d", len(files), repo, pr_number)
+        return files
+
+    except Exception as e:
+        logger.warning(
+            "Could not fetch changed files for %s#%d (proceeding with full eval): %s",
+            repo, pr_number, e,
+        )
+        return []
+
+
+@router.post("/github", response_model=WebhookResponse, status_code=202)
 async def github_webhook(
     request: Request,
     x_hub_signature_256: str = Header(None, alias="X-Hub-Signature-256"),
@@ -77,7 +127,8 @@ async def github_webhook(
     Receive and process GitHub webhook events.
 
     Verifies HMAC-SHA256 signature, processes pull_request events,
-    filters against trigger patterns, and enqueues eval jobs.
+    filters against trigger patterns, writes DB row, and starts
+    a Temporal workflow for the evaluation.
     """
     # Read raw body for signature verification
     body = await request.body()
@@ -125,12 +176,10 @@ async def github_webhook(
         repo_full_name, action, pr_number, pr.get("title", ""), head_sha[:7],
     )
 
-    # Get changed files (from the PR payload or a separate API call)
-    # For now, we extract from the PR payload if available
-    changed_files = _extract_changed_files(payload)
+    # Get changed files via GitHub API
+    changed_files = await _extract_changed_files(repo_full_name, pr_number, request)
 
-    # Filter against trigger patterns
-    # Default patterns if not configured
+    # Filter against trigger patterns (default: Python files)
     trigger_patterns = ["**/*.py"]
 
     if changed_files and not _matches_trigger_patterns(changed_files, trigger_patterns):
@@ -139,32 +188,64 @@ async def github_webhook(
             reason="No trigger files changed",
         )
 
-    # Enqueue eval job
+    # Generate run ID
     run_id = str(uuid.uuid4())
 
-    logger.info(
-        "Queued eval run %s for %s#%d @ %s",
-        run_id, repo_full_name, pr_number, head_sha[:7],
-    )
+    # ── Write initial DB row ──────────────────────────────────────────
+    try:
+        pool = request.app.state.db_pool
+        from ..db import queries
+        await queries.create_eval_run(
+            pool,
+            repo_full_name=repo_full_name,
+            commit_sha=head_sha,
+            pr_number=pr_number,
+            eval_suite="full",
+            triggered_by="webhook",
+            metadata={"base_sha": base_sha, "changed_files": changed_files[:50]},
+        )
+        logger.info("Created eval run %s in database", run_id)
+    except Exception as e:
+        logger.error("Failed to write eval run to DB: %s", e)
+        # Continue — Temporal can still start the workflow
 
-    # TODO: In Phase 4, this will enqueue a Temporal workflow.
-    # For now, we return the run_id for the caller to poll.
+    # ── Start Temporal workflow ───────────────────────────────────────
+    temporal_client = getattr(request.app.state, "temporal", None)
+    if temporal_client is not None:
+        try:
+            from ..workflows.eval_workflow import EvalRunWorkflow, EvalRunInput
+            task_queue = os.environ.get("TEMPORAL_TASK_QUEUE", "agentci-eval")
+
+            workflow_input = EvalRunInput(
+                run_id=run_id,
+                repo_full_name=repo_full_name,
+                commit_sha=head_sha,
+                pr_number=pr_number,
+                eval_suite="full",
+                scenarios_path="./eval/scenarios",
+                triggered_by="webhook",
+            )
+
+            await temporal_client.start_workflow(
+                EvalRunWorkflow.run,
+                workflow_input,
+                id=f"eval-{run_id}",
+                task_queue=task_queue,
+            )
+            logger.info("Started Temporal workflow eval-%s on queue %s", run_id, task_queue)
+
+        except Exception as e:
+            logger.error("Failed to start Temporal workflow: %s", e)
+            # Update DB status to failed
+            try:
+                await queries.update_eval_run_status(pool, run_id, "failed")
+            except Exception:
+                pass
+    else:
+        logger.warning("Temporal not available — eval run %s is queued but not started", run_id)
 
     return WebhookResponse(
         action="queued",
         reason=f"Eval run queued for {repo_full_name}#{pr_number}",
         run_id=run_id,
     )
-
-
-def _extract_changed_files(payload: dict[str, Any]) -> list[str]:
-    """Extract changed file paths from the webhook payload."""
-    files = []
-
-    # Some webhook payloads include changed files directly
-    pr = payload.get("pull_request", {})
-
-    # The files are typically not in the webhook payload itself;
-    # they require a separate API call. For now, return empty
-    # to allow all events through (the trigger filter becomes a no-op).
-    return files
