@@ -45,10 +45,20 @@ Repository = "https://github.com/agentci/agentci"
 "Issue Tracker" = "https://github.com/agentci/agentci/issues"
 
 [project.optional-dependencies]
+server = [
+    "asyncpg>=0.29.0",
+    "redis[hiredis]>=5.0.0",
+    "temporalio>=1.6.0",
+    "structlog>=24.1.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.4.0",
+    "structlog>=24.1.0",
+]
+all = [
+    "agentci[server,dev]",
 ]
 
 [project.scripts]

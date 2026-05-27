@@ -1,6 +1,5 @@
-version: '3.9'
-
 services:
+  # ── Infrastructure ─────────────────────────────────────────────────────────
   postgres:
     image: postgres:16
     environment:
@@ -8,10 +7,11 @@ services:
       POSTGRES_USER: agentci
       POSTGRES_PASSWORD: agentci_dev
     ports:
-      - "5432:5432"
+      - "15432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ../src/agentci/db/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
+      - ../src/agentci/db/migrations/002_add_cost_tracking.sql:/docker-entrypoint-initdb.d/002_add_cost_tracking.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U agentci"]
       interval: 5s
@@ -43,13 +43,80 @@ services:
         condition: service_healthy
 
   temporal-ui:
-    image: temporalio/ui:2.26
+    image: temporalio/ui:2.26.2
     ports:
       - "8080:8080"
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
     depends_on:
       - temporal
+
+  # ── Application ────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://agentci:agentci_dev@postgres:5432/agentci
+      REDIS_URL: redis://redis:6379
+      TEMPORAL_HOST: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: agentci-eval
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-dev-secret}
+      AGENTCI_API_KEYS: ${AGENTCI_API_KEYS:-dev-key}
+      AGENTCI_SESSION_SECRET: ${AGENTCI_SESSION_SECRET:-dev-session-secret}
+      DASHBOARD_ORIGIN: http://localhost:13000
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: worker
+    environment:
+      DATABASE_URL: postgresql://agentci:agentci_dev@postgres:5432/agentci
+      REDIS_URL: redis://redis:6379
+      TEMPORAL_HOST: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: agentci-eval
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: json
+      # Pass through LLM API keys from host
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ../dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "13000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8000
+    depends_on:
+      - api
+    restart: unless-stopped
 
 volumes:
   pgdata:

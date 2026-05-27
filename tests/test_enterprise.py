@@ -137,9 +137,8 @@ class TestPythonFunctionAdapter:
         adapter = PythonFunctionAdapter(lambda x: "ok")
         adapter.reset()  # should not raise
 
-    def test_stream_returns_content(self):
+    def test_stream_raises_not_implemented(self):
         adapter = PythonFunctionAdapter(lambda x: "streamed")
         inp = AgentInput(conversation=[{"role": "user", "content": "test"}])
-        chunks = list(adapter.stream(inp))
-        assert len(chunks) == 1
-        assert "streamed" in chunks[0]
+        with pytest.raises(NotImplementedError, match="does not support streaming"):
+            list(adapter.stream(inp))

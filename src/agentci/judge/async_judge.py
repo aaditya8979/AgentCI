@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+import uuid
 from typing import Any
 
 import httpx
@@ -67,8 +69,11 @@ class AsyncLLMJudge:
         agent_output: str,
         rubric_criteria: list[dict],
         context: str | None = None,
+        run_id: str | None = None,
+        scenario_id: str | None = None,
     ) -> JudgeResponse:
         """Score an agent's output against a rubric asynchronously."""
+        call_id = str(uuid.uuid4())
         user_prompt = build_judge_prompt(
             scenario_description=scenario_description,
             conversation_history=conversation_history,
@@ -76,8 +81,39 @@ class AsyncLLMJudge:
             rubric_criteria=rubric_criteria,
             context=context,
         )
+
+        start = time.perf_counter()
         raw = await self._call_llm(JUDGE_SYSTEM_PROMPT, user_prompt)
-        return self._parse_response(raw, rubric_criteria)
+        latency_ms = int((time.perf_counter() - start) * 1000)
+
+        # Estimate token counts (rough: 4 chars ≈ 1 token)
+        input_tokens = (len(JUDGE_SYSTEM_PROMPT) + len(user_prompt)) // 4
+        output_tokens = len(raw) // 4
+
+        from .pricing import compute_cost, format_cost
+        cost_usd = compute_cost(self.provider, self.model, input_tokens, output_tokens)
+
+        logger.info(
+            "judge_call_completed",
+            extra={
+                "call_id": call_id,
+                "run_id": run_id,
+                "scenario_id": scenario_id,
+                "provider": self.provider,
+                "model": self.model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_usd": cost_usd,
+                "latency_ms": latency_ms,
+            },
+        )
+
+        response = self._parse_response(raw, rubric_criteria)
+        response.cost_usd = cost_usd
+        response.latency_ms = latency_ms
+        response.input_tokens = input_tokens
+        response.output_tokens = output_tokens
+        return response
 
     async def _call_llm(self, system: str, user: str) -> str:
         if self.provider == "openai":

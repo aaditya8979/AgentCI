@@ -42,6 +42,10 @@ class JudgeResponse(BaseModel):
     scores: Dict[str, ScoreBreakdown]
     overall_assessment: str
     confidence: float = Field(..., ge=0.0, le=1.0)
+    cost_usd: float = 0.0
+    latency_ms: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 class ScenarioResult(BaseModel):
     scenario_id: str

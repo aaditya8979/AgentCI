@@ -176,6 +176,32 @@ async def github_webhook(
         repo_full_name, action, pr_number, pr.get("title", ""), head_sha[:7],
     )
 
+    # ── Rate limiting ─────────────────────────────────────────────────
+    redis = getattr(request.app.state, "redis", None)
+    if redis:
+        try:
+            from ..cache.redis_client import check_rate_limit
+            max_evals_per_hour = int(os.environ.get("AGENTCI_RATE_LIMIT", "20"))
+            allowed = await check_rate_limit(
+                repo=repo_full_name,
+                limit=max_evals_per_hour,
+                window_seconds=3600,
+            )
+            if not allowed:
+                logger.warning("Rate limit exceeded for %s", repo_full_name)
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "action": "rate_limited",
+                        "reason": f"Repository {repo_full_name} has exceeded the evaluation "
+                                  f"rate limit ({max_evals_per_hour}/hour). Retry later.",
+                    },
+                    headers={"Retry-After": "3600"},
+                )
+        except Exception as e:
+            logger.warning("Rate limit check failed (proceeding): %s", e)
+
     # Get changed files via GitHub API
     changed_files = await _extract_changed_files(repo_full_name, pr_number, request)
 
@@ -193,7 +219,8 @@ async def github_webhook(
 
     # ── Write initial DB row ──────────────────────────────────────────
     try:
-        pool = request.app.state.db_pool
+        from ..db.connection import get_pool
+        pool = get_pool()
         from ..db import queries
         await queries.create_eval_run(
             pool,
@@ -236,16 +263,15 @@ async def github_webhook(
 
         except Exception as e:
             logger.error("Failed to start Temporal workflow: %s", e)
-            # Update DB status to failed
             try:
                 await queries.update_eval_run_status(pool, run_id, "failed")
-            except Exception:
-                pass
+            except Exception as db_err:
+                logger.error("Failed to update run status after workflow failure: %s", db_err)
     else:
         logger.warning("Temporal not available — eval run %s is queued but not started", run_id)
 
     return WebhookResponse(
         action="queued",
-        reason=f"Eval run queued for {repo_full_name}#{pr_number}",
+        reason=f"Evaluation queued for {repo_full_name}#{pr_number}",
         run_id=run_id,
     )

@@ -17,11 +17,12 @@ router = APIRouter()
 
 
 def _pool(request: Request):
-    """Get the DB pool from app state."""
-    pool = getattr(request.app.state, "db_pool", None)
-    if pool is None:
+    """Get the DB pool from the module-level singleton."""
+    from ..db.connection import get_pool
+    try:
+        return get_pool()
+    except RuntimeError:
         raise HTTPException(status_code=503, detail="Database not available")
-    return pool
 
 
 # ── Eval Runs ────────────────────────────────────────────────────────────

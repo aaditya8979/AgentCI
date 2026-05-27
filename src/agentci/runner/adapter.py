@@ -1,17 +1,20 @@
 """
-Agent Adapter Protocol — unified interface for running any agent.
+Agent adapters for AgentCI.
 
-Provides a Protocol class and concrete adapters for:
-  - Python functions (existing behavior)
-  - HTTP REST API agents
-  - LangChain AgentExecutors
-  - MCP-compatible agent servers
+Each adapter wraps a different type of agent (Python function, HTTP API,
+LangChain executor, MCP server) behind a uniform interface.
+
+Streaming contract:
+  - stream() yields chunks as they arrive from the provider.
+  - If the provider does not support streaming natively, stream()
+    raises NotImplementedError. Callers must check and fall back to run().
+  - No adapter fakes streaming by calling run() and yielding once.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Iterator, Protocol, runtime_checkable
+from typing import Any, Iterator
 
 import httpx
 
@@ -20,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentInput:
-    """Standardized input to any agent adapter."""
+    """Standardised input to any agent adapter."""
     conversation: list[dict[str, str]]
     context: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -28,28 +31,18 @@ class AgentInput:
 
 @dataclass
 class AgentOutput:
-    """Standardized output from any agent adapter."""
-    content: str
-    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    """Standardised output from any agent adapter."""
+    content: str = ""
+    tool_calls: list[dict] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
-
-
-@runtime_checkable
-class AgentAdapter(Protocol):
-    """Protocol all agent adapters must implement."""
-
-    def run(self, input: AgentInput) -> AgentOutput: ...
-    async def run_async(self, input: AgentInput) -> AgentOutput: ...
-    def stream(self, input: AgentInput) -> Iterator[str]: ...
-    def reset(self) -> None: ...
-    def health_check(self) -> bool: ...
 
 
 class PythonFunctionAdapter:
     """
-    Wraps a plain Python function: run(input: str | dict) -> str.
+    Wraps a plain Python callable as an agent.
 
-    This is the default adapter matching AgentCI v0.1 behavior.
+    The function must accept a dict with 'messages' and 'context' keys
+    and return either a string or a dict with a 'response'/'content' key.
     """
 
     def __init__(self, func: Any):
@@ -68,10 +61,20 @@ class PythonFunctionAdapter:
         return self.run(input)
 
     def stream(self, input: AgentInput) -> Iterator[str]:
-        result = self.run(input)
-        yield result.content
+        """
+        PythonFunctionAdapter does not support streaming.
+
+        The underlying function is synchronous and returns a complete
+        response. There is no way to stream partial results.
+        """
+        raise NotImplementedError(
+            "PythonFunctionAdapter does not support streaming. "
+            "The underlying function returns a complete response. "
+            "Use run() instead."
+        )
 
     def reset(self) -> None:
+        """No state to reset for stateless function adapters."""
         pass
 
     def health_check(self) -> bool:
@@ -84,6 +87,10 @@ class HTTPAdapter:
 
     Expects a POST endpoint that accepts JSON with conversation and context,
     and returns JSON with a 'content' field.
+
+    Streaming uses httpx's streaming response to yield chunks as they
+    arrive from the server (requires the server to support chunked
+    transfer encoding or SSE).
     """
 
     def __init__(
@@ -135,10 +142,31 @@ class HTTPAdapter:
             )
 
     def stream(self, input: AgentInput) -> Iterator[str]:
-        result = self.run(input)
-        yield result.content
+        """
+        Stream response chunks from the HTTP endpoint.
+
+        Uses httpx streaming to yield bytes as they arrive.
+        The server must support chunked transfer encoding.
+        """
+        with httpx.Client(timeout=self.timeout) as client:
+            with client.stream(
+                "POST",
+                self.endpoint,
+                headers={**self.headers, "Accept": "text/event-stream"},
+                json={
+                    "conversation": input.conversation,
+                    "context": input.context,
+                    "metadata": input.metadata,
+                    "stream": True,
+                },
+            ) as response:
+                response.raise_for_status()
+                for chunk in response.iter_text():
+                    if chunk.strip():
+                        yield chunk
 
     def reset(self) -> None:
+        """HTTP adapters are stateless — nothing to reset."""
         pass
 
     def health_check(self) -> bool:
@@ -173,11 +201,35 @@ class LangChainAdapter:
         return AgentOutput(content=content)
 
     def stream(self, input: AgentInput) -> Iterator[str]:
-        result = self.run(input)
-        yield result.content
+        """
+        Stream from LangChain executor using its native stream method.
+
+        Requires the executor to support .stream() (LangChain >= 0.1).
+        Falls back to NotImplementedError if the executor doesn't support it.
+        """
+        if not hasattr(self._executor, "stream"):
+            raise NotImplementedError(
+                "This LangChain executor does not support streaming. "
+                "Use run() instead, or upgrade to LangChain >= 0.1."
+            )
+        last_msg = input.conversation[-1]["content"] if input.conversation else ""
+        for chunk in self._executor.stream({"input": last_msg}):
+            if isinstance(chunk, dict):
+                text = chunk.get("output", chunk.get("text", ""))
+                if text:
+                    yield text
+            elif isinstance(chunk, str):
+                yield chunk
+            else:
+                # LangChain RunLogPatch or AddableDict
+                text = str(chunk)
+                if text:
+                    yield text
 
     def reset(self) -> None:
-        pass
+        """Reset executor memory if available."""
+        if hasattr(self._executor, "memory") and self._executor.memory:
+            self._executor.memory.clear()
 
     def health_check(self) -> bool:
         return self._executor is not None
@@ -195,7 +247,6 @@ class MCPAdapter:
         self.timeout = timeout
 
     def run(self, input: AgentInput) -> AgentOutput:
-        last_msg = input.conversation[-1]["content"] if input.conversation else ""
         with httpx.Client(timeout=self.timeout) as client:
             resp = client.post(
                 f"{self.server_url}/v1/chat",
@@ -222,10 +273,35 @@ class MCPAdapter:
             )
 
     def stream(self, input: AgentInput) -> Iterator[str]:
-        result = self.run(input)
-        yield result.content
+        """
+        Stream from MCP server using SSE.
+
+        The MCP server must support the /v1/chat/stream endpoint
+        with server-sent events.
+        """
+        with httpx.Client(timeout=self.timeout) as client:
+            with client.stream(
+                "POST",
+                f"{self.server_url}/v1/chat/stream",
+                json={"messages": input.conversation, "context": input.context},
+                headers={"Accept": "text/event-stream"},
+            ) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if line.startswith("data: "):
+                        data = line[6:]
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = __import__("json").loads(data)
+                            text = chunk.get("content", chunk.get("text", ""))
+                            if text:
+                                yield text
+                        except __import__("json").JSONDecodeError:
+                            yield data
 
     def reset(self) -> None:
+        """MCP adapters are stateless — nothing to reset."""
         pass
 
     def health_check(self) -> bool:

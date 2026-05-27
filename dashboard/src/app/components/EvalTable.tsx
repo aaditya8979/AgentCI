@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 
 interface EvalRun {
@@ -9,37 +9,87 @@ interface EvalRun {
   pr: number | null;
   commit: string;
   suite: string;
-  score: number;
+  score: number | null;
   baseline: number | null;
   delta: number | null;
-  status: "completed" | "running" | "failed";
+  status: "completed" | "running" | "failed" | "pending";
   passed: boolean;
-  duration: string;
-  time: string;
-  scenarios: string;
+  duration_ms: number | null;
+  scenarios_total: number;
+  scenarios_passed: number;
+  created_at: string | null;
 }
 
-const RUNS: EvalRun[] = [
-  { id: "a1b2c3d4", repo: "acme/support-agent", pr: 142, commit: "f8e2a1b", suite: "full", score: 0.94, baseline: 0.91, delta: 0.03, status: "completed", passed: true, duration: "2m 14s", time: "3m", scenarios: "24/24" },
-  { id: "e5f6g7h8", repo: "acme/support-agent", pr: 141, commit: "3d4c5b6", suite: "full", score: 0.72, baseline: 0.91, delta: -0.19, status: "completed", passed: false, duration: "3m 01s", time: "28m", scenarios: "17/24" },
-  { id: "i9j0k1l2", repo: "acme/search-bot", pr: 89, commit: "9a8b7c6", suite: "safety", score: 0.88, baseline: 0.85, delta: 0.03, status: "completed", passed: true, duration: "1m 45s", time: "1h", scenarios: "12/12" },
-  { id: "m3n4o5p6", repo: "acme/code-reviewer", pr: 203, commit: "1b2c3d4", suite: "full", score: 0, baseline: null, delta: null, status: "running", passed: false, duration: "—", time: "now", scenarios: "12/50" },
-  { id: "q7r8s9t0", repo: "acme/support-agent", pr: 140, commit: "5e6f7g8", suite: "full", score: 0.91, baseline: 0.90, delta: 0.01, status: "completed", passed: true, duration: "2m 08s", time: "2h", scenarios: "24/24" },
-  { id: "u1v2w3x4", repo: "acme/search-bot", pr: 88, commit: "h9i0j1k", suite: "full", score: 0.96, baseline: 0.93, delta: 0.03, status: "completed", passed: true, duration: "1m 32s", time: "3h", scenarios: "18/18" },
-  { id: "y5z6a7b8", repo: "acme/code-reviewer", pr: 202, commit: "2l3m4n5", suite: "compliance", score: 0.45, baseline: 0.89, delta: -0.44, status: "completed", passed: false, duration: "4m 12s", time: "5h", scenarios: "12/30" },
-  { id: "c9d0e1f2", repo: "acme/support-agent", pr: null, commit: "main", suite: "full", score: 0.93, baseline: 0.91, delta: 0.02, status: "completed", passed: true, duration: "2m 20s", time: "6h", scenarios: "24/24" },
-];
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 function StatusDot({ status, passed }: { status: string; passed: boolean }) {
   if (status === "running") return <span className="inline-block w-2 h-2 rounded-full bg-[var(--blue)] animate-pulse" />;
-  if (!passed) return <span className="inline-block w-2 h-2 rounded-full bg-[var(--red)]" />;
+  if (status === "pending") return <span className="inline-block w-2 h-2 rounded-full bg-[var(--text-3)]" />;
+  if (status === "failed" || !passed) return <span className="inline-block w-2 h-2 rounded-full bg-[var(--red)]" />;
   return <span className="inline-block w-2 h-2 rounded-full bg-[var(--green)]" />;
 }
 
-export default function EvalTable() {
-  const [q, setQ] = useState("");
-  const filtered = RUNS.filter(r => !q || r.repo.includes(q) || r.suite.includes(q));
+function SkeletonRow() {
+  return (
+    <tr className="border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+      {Array.from({ length: 10 }).map((_, i) => (
+        <td key={i} className="px-3 py-2.5">
+          <div className="h-3 rounded" style={{ background: 'var(--bg-3)', width: `${40 + Math.random() * 40}%` }} />
+        </td>
+      ))}
+    </tr>
+  );
+}
 
+function formatDuration(ms: number | null): string {
+  if (!ms) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+function formatAge(iso: string | null): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+export default function EvalTable() {
+  const [runs, setRuns] = useState<EvalRun[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+
+  async function fetchRuns() {
+    try {
+      const apiKey = typeof window !== "undefined" ? localStorage.getItem("agentci_api_key") || "" : "";
+      const resp = await fetch(`${API_BASE}/api/runs?limit=50`, {
+        headers: apiKey ? { "X-API-Key": apiKey } : {},
+      });
+      if (!resp.ok) throw new Error(`API returned ${resp.status}`);
+      const data = await resp.json();
+      setRuns(data.runs || []);
+      setError(null);
+    } catch (e: any) {
+      setError(e.message || "Failed to load runs");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchRuns();
+    const interval = setInterval(fetchRuns, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const filtered = runs.filter(r => !q || r.repo.includes(q) || r.suite.includes(q));
   const cols = ["", "Repository", "PR", "SHA", "Suite", "Score", "Δ", "Scenarios", "Duration", "Age"];
 
   return (
@@ -53,6 +103,16 @@ export default function EvalTable() {
           onBlur={e => e.currentTarget.style.borderColor = 'var(--border-default)'}
         />
       </div>
+
+      {error && (
+        <div className="rounded-md border px-4 py-3 mb-3 flex items-center justify-between"
+             style={{ borderColor: 'var(--red)', background: 'var(--red)11' }}>
+          <span className="text-[13px]" style={{ color: 'var(--red)' }}>{error}</span>
+          <button onClick={fetchRuns} className="text-[12px] px-2 py-1 rounded"
+                  style={{ background: 'var(--bg-3)', color: 'var(--text-1)' }}>Retry</button>
+        </div>
+      )}
+
       <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-subtle)' }}>
         <table className="w-full">
           <thead>
@@ -63,7 +123,19 @@ export default function EvalTable() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(r => (
+            {loading ? (
+              <>
+                <SkeletonRow />
+                <SkeletonRow />
+                <SkeletonRow />
+              </>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={10} className="px-4 py-8 text-center text-[13px]" style={{ color: 'var(--text-2)' }}>
+                  {q ? "No runs match your filter." : "No evaluation runs yet. Run your first evaluation to see results."}
+                </td>
+              </tr>
+            ) : filtered.map(r => (
               <tr key={r.id} className="border-t group cursor-pointer transition-colors"
                   style={{ borderColor: 'var(--border-subtle)' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-2)'}
@@ -76,15 +148,15 @@ export default function EvalTable() {
                 <td className="px-3 py-2.5 text-[13px]" style={{ color: r.pr ? 'var(--text-1)' : 'var(--text-3)' }}>{r.pr ? `#${r.pr}` : "—"}</td>
                 <td className="px-3 py-2.5 mono text-[12px]" style={{ color: 'var(--text-2)' }}>{r.commit}</td>
                 <td className="px-3 py-2.5"><span className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-3)', color: 'var(--text-2)' }}>{r.suite}</span></td>
-                <td className="px-3 py-2.5 mono tabular text-[13px] font-medium" style={{ color: r.status === 'running' ? 'var(--text-3)' : r.score >= 0.85 ? 'var(--green)' : r.score >= 0.7 ? 'var(--amber)' : 'var(--red)' }}>
-                  {r.status === "running" ? "—" : r.score.toFixed(2)}
+                <td className="px-3 py-2.5 mono tabular text-[13px] font-medium" style={{ color: r.status === 'running' ? 'var(--text-3)' : (r.score ?? 0) >= 0.85 ? 'var(--green)' : (r.score ?? 0) >= 0.7 ? 'var(--amber)' : 'var(--red)' }}>
+                  {r.status === "running" || r.score === null ? "—" : r.score.toFixed(2)}
                 </td>
                 <td className="px-3 py-2.5 mono tabular text-[12px]" style={{ color: r.delta === null ? 'var(--text-3)' : r.delta >= 0 ? 'var(--green)' : 'var(--red)' }}>
                   {r.delta === null ? "—" : `${r.delta >= 0 ? '+' : ''}${r.delta.toFixed(2)}`}
                 </td>
-                <td className="px-3 py-2.5 text-[13px]" style={{ color: 'var(--text-1)' }}>{r.scenarios}</td>
-                <td className="px-3 py-2.5 text-[13px]" style={{ color: 'var(--text-2)' }}>{r.duration}</td>
-                <td className="px-3 py-2.5 text-[12px]" style={{ color: 'var(--text-3)' }}>{r.time}</td>
+                <td className="px-3 py-2.5 text-[13px]" style={{ color: 'var(--text-1)' }}>{r.scenarios_passed}/{r.scenarios_total}</td>
+                <td className="px-3 py-2.5 text-[13px]" style={{ color: 'var(--text-2)' }}>{formatDuration(r.duration_ms)}</td>
+                <td className="px-3 py-2.5 text-[12px]" style={{ color: 'var(--text-3)' }}>{formatAge(r.created_at)}</td>
               </tr>
             ))}
           </tbody>

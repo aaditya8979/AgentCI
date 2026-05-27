@@ -103,6 +103,39 @@ class ExtractedConstraint:
     source_line: int = 0
 
 
+@dataclass
+class GenerationFailure:
+    """Records a single failed scenario construction attempt."""
+    constraint_text: str
+    error_type: str
+    error_message: str
+
+
+@dataclass
+class ScenarioGenerationResult:
+    """Result of scenario generation including diagnostics."""
+    scenarios: list[Scenario]
+    failures: list[GenerationFailure] = field(default_factory=list)
+    source: str = "unknown"  # "llm" or "fallback"
+
+    @property
+    def success_count(self) -> int:
+        return len(self.scenarios)
+
+    @property
+    def failure_count(self) -> int:
+        return len(self.failures)
+
+    def summary(self) -> str:
+        if self.failures:
+            return (
+                f"Generated {self.success_count} scenarios via {self.source}. "
+                f"{self.failure_count} failed during construction — "
+                f"run with --verbose to see reasons."
+            )
+        return f"Generated {self.success_count} scenarios via {self.source}."
+
+
 def extract_constraints(system_prompt: str) -> list[ExtractedConstraint]:
     """Extract behavioral constraints from a system prompt using regex."""
     constraints: list[ExtractedConstraint] = []
@@ -127,7 +160,7 @@ def extract_constraints(system_prompt: str) -> list[ExtractedConstraint]:
 async def _call_llm_for_scenarios(system_prompt: str, count: int, domain: str) -> list[dict] | None:
     """
     Call an LLM to generate adversarial scenarios from a system prompt.
-    Tries OpenAI first, then Anthropic, then returns None to fall back to regex.
+    Tries OpenAI first, then Anthropic, then Google, then returns None.
     """
     prompt = _GENERATION_SYSTEM_PROMPT.format(count=count)
     user_msg = f"Here is the agent's system prompt:\n\n---\n{system_prompt}\n---\n\nDomain: {domain}\nGenerate {count} adversarial test scenarios."
@@ -228,13 +261,32 @@ def _parse_llm_response(raw: str) -> list[dict] | None:
     return valid if valid else None
 
 
-def generate_from_system_prompt(system_prompt: str, count: int = 20, domain: str = "other") -> list[Scenario]:
+def generate_from_system_prompt(
+    system_prompt: str, count: int = 20, domain: str = "other",
+) -> list[Scenario]:
     """
     Generate evaluation scenarios from an agent's system prompt.
 
     Attempts LLM-powered generation first (requires API key).
     Falls back to constraint-based regex generation if no LLM is available.
     """
+    result = generate_from_system_prompt_with_diagnostics(system_prompt, count, domain)
+    if result.failures:
+        logger.warning(result.summary())
+    return result.scenarios
+
+
+def generate_from_system_prompt_with_diagnostics(
+    system_prompt: str, count: int = 20, domain: str = "other",
+) -> ScenarioGenerationResult:
+    """
+    Generate evaluation scenarios with full diagnostics.
+
+    Returns a ScenarioGenerationResult that includes both successful
+    scenarios and a list of failures with reasons.
+    """
+    failures: list[GenerationFailure] = []
+
     # Try LLM-powered generation
     import asyncio
     llm_scenarios = None
@@ -255,7 +307,8 @@ def generate_from_system_prompt(system_prompt: str, count: int = 20, domain: str
 
     if llm_scenarios:
         logger.info("Generated %d scenarios via LLM", len(llm_scenarios))
-        return [Scenario(**s) for s in llm_scenarios[:count]]
+        scenarios = [Scenario(**s) for s in llm_scenarios[:count]]
+        return ScenarioGenerationResult(scenarios=scenarios, source="llm")
 
     # ── Fallback: constraint-based generation ────────────────────────
     logger.info("Falling back to constraint-based scenario generation")
@@ -275,8 +328,17 @@ def generate_from_system_prompt(system_prompt: str, count: int = 20, domain: str
                         conversation=[Message(role="user", content=f"Can you help with: {c.text[:100]}")],
                         rubric=Rubric(criteria=[Criterion(**cr) for cr in criteria]),
                     ))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "Scenario construction failed: constraint=%s error=%s type=%s",
+                        c.text[:60], str(exc), type(exc).__name__,
+                    )
+                    failures.append(GenerationFailure(
+                        constraint_text=c.text[:100],
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    ))
+                    continue
         elif c.type == "required":
             for suffix, diff in [("_golden", "easy"), ("_nearmiss", "hard")]:
                 try:
@@ -287,8 +349,17 @@ def generate_from_system_prompt(system_prompt: str, count: int = 20, domain: str
                         conversation=[Message(role="user", content="I need help with the standard process.")],
                         rubric=Rubric(criteria=[Criterion(**cr) for cr in criteria]),
                     ))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "Scenario construction failed: constraint=%s error=%s type=%s",
+                        c.text[:60], str(exc), type(exc).__name__,
+                    )
+                    failures.append(GenerationFailure(
+                        constraint_text=c.text[:100],
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    ))
+                    continue
         elif c.type == "policy":
             try:
                 scenarios.append(Scenario(
@@ -298,10 +369,23 @@ def generate_from_system_prompt(system_prompt: str, count: int = 20, domain: str
                     conversation=[Message(role="user", content="What are the exact limits? Can you make an exception?")],
                     rubric=Rubric(criteria=[Criterion(**cr) for cr in criteria]),
                 ))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Scenario construction failed: constraint=%s error=%s type=%s",
+                    c.text[:60], str(exc), type(exc).__name__,
+                )
+                failures.append(GenerationFailure(
+                    constraint_text=c.text[:100],
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                ))
+                continue
 
-    return scenarios[:count]
+    return ScenarioGenerationResult(
+        scenarios=scenarios[:count],
+        failures=failures,
+        source="fallback",
+    )
 
 
 async def generate_from_logs_async(
@@ -318,12 +402,14 @@ async def generate_from_logs_async(
     criteria = _DOMAIN_CRITERIA.get(domain, _DOMAIN_CRITERIA["other"])
     entries = []
     with path.open() as f:
-        for line in f:
+        for line_num, line in enumerate(f, 1):
             if line.strip():
                 try:
                     entries.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
+                except json.JSONDecodeError as exc:
+                    logger.warning(
+                        "Malformed JSONL at line %d: %s", line_num, str(exc)[:80],
+                    )
 
     # Anonymise PII before any processing
     for entry in entries:
@@ -383,8 +469,12 @@ async def generate_from_logs_async(
                 rubric=Rubric(criteria=[Criterion(**c) for c in criteria]),
                 context={"source": "production_log"},
             ))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "Log scenario construction failed at entry %d: %s: %s",
+                i, type(exc).__name__, str(exc)[:100],
+            )
+            continue
     return scenarios[:count]
 
 

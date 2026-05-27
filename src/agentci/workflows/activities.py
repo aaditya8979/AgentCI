@@ -26,7 +26,7 @@ async def update_eval_run_status(
     from ..db.connection import get_pool
     from ..db import queries
 
-    pool = await get_pool()
+    pool = get_pool()
     await queries.update_eval_run_status(pool, run_id, status, **kwargs)
     logger.info("Updated run %s → %s", run_id, status)
 
@@ -45,7 +45,7 @@ async def create_github_check_run(
     gh = GitHubClient()
     try:
         check_run_id = await gh.create_check_run(repo, sha, f"AgentCI Eval ({run_id[:8]})")
-        pool = await get_pool()
+        pool = get_pool()
         await queries.update_eval_run_status(
             pool, run_id, "running", github_check_run_id=check_run_id,
         )
@@ -174,7 +174,7 @@ async def aggregate_and_analyze(
     final_score = sum(scores) / len(scores)
 
     # Compare against baseline
-    pool = await get_pool()
+    pool = get_pool()
     baseline_scores = await queries.get_baseline_scores(
         pool, repo_full_name, results[0].scenario_id, eval_suite,
     )
@@ -207,7 +207,7 @@ async def store_results(run_id: str, results: list[Any]) -> None:
     from ..db.connection import get_pool
     from ..db import queries
 
-    pool = await get_pool()
+    pool = get_pool()
     for r in results:
         await queries.insert_scenario_result(
             pool,
@@ -250,7 +250,7 @@ async def report_to_github(
     from ..reporter.markdown import MarkdownReporter
     from ..models.scenario import ScenarioResult
 
-    pool = await get_pool()
+    pool = get_pool()
     run = await queries.get_eval_run(pool, run_id)
     if not run:
         logger.error("Run %s not found for GitHub reporting", run_id)

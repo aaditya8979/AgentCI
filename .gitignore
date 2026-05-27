@@ -27,6 +27,20 @@ htmlcov/
 .agentci/
 demo_project/
 
+# Environment / Secrets
+.env
+.env.local
+.env.production
+*.pem
+
+# Node / Dashboard
+node_modules/
+.next/
+.turbo/
+
+# Docker
+docker/pgdata/
+
 # OS
 .DS_Store
 Thumbs.db

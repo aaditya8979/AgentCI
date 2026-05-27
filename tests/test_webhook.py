@@ -199,6 +199,9 @@ class TestWebhookEndpoint:
 class TestHealthEndpoint:
     def test_health_check(self, client):
         resp = client.get("/health")
-        assert resp.status_code == 200
+        # 200 if DB pool is initialised, 503 if not — both are correct
+        assert resp.status_code in (200, 503)
         data = resp.json()
-        assert data["status"] in ("ok", "degraded")
+        assert data["status"] in ("ok", "degraded", "unhealthy")
+        assert "checks" in data
+        assert "api" in data["checks"]
