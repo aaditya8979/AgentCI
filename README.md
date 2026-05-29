@@ -48,7 +48,7 @@ PR Opened → Webhook → Run Agent on Scenarios → 3-Judge Panel → Statistic
 ## 🚀 Installation
 
 ```bash
-pip install agentci
+pip install agentci-aadi
 ```
 
 Requires Python 3.11+. For the self-hosted server stack, see [Self-Hosting](#-self-hosting).

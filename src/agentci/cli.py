@@ -165,7 +165,14 @@ def _build_json_output(
 @click.group()
 @click.version_option(version="0.2.0", prog_name="agentci")
 def main():
-    """⚡ AgentCI — Enterprise-Grade CI/CD Quality Gate for LLM Agents."""
+    """⚡ AgentCI — Enterprise-Grade CI/CD Quality Gate for LLM Agents.
+
+    AgentCI evaluates your LLM agents by running them against predefined scenarios
+    and judging their outputs using a panel of multiple LLMs (GPT-4o, Claude, Gemini).
+    
+    It prevents regressions, hallucinations, and safety violations from reaching production
+    by applying statistical rigor (Welch's t-test) to score changes.
+    """
     pass
 
 

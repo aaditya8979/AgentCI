@@ -8,7 +8,7 @@
 ## Install from PyPI
 
 ```bash
-pip install agentci
+pip install agentci-aadi
 ```
 
 ## Install from Source
