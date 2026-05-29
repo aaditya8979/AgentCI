@@ -13,7 +13,6 @@ from agentci.runner.adapter import (
     PythonFunctionAdapter,
     HTTPAdapter,
     LangChainAdapter,
-    MCPAdapter,
 )
 
 
@@ -42,7 +41,7 @@ class TestHTTPAdapterStreaming:
             )
 
         transport = httpx.MockTransport(handler)
-        adapter = HTTPAdapter(endpoint="http://test.local/agent")
+        HTTPAdapter(endpoint="http://test.local/agent")
 
         # Override the client creation to use our mock transport
         inp = AgentInput(conversation=[{"role": "user", "content": "test"}])

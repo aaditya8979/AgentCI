@@ -11,7 +11,7 @@ import logging
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 from ..models.scenario import (
     Message, Scenario, ScenarioTrace, TraceStep,
@@ -114,7 +114,7 @@ class AgentRunner:
         ))
 
         # Step 2: Build the input payload
-        conversation_text = self._format_conversation(scenario.conversation)
+        self._format_conversation(scenario.conversation)
         agent_input = {
             "messages": [{"role": m.role, "content": m.content} for m in scenario.conversation],
             "context": scenario.context,

@@ -68,7 +68,7 @@ class TestCLIEvalPipeline:
     def test_failing_agent_fails(self, tmp_path):
         """The failing agent should be detected as a failure."""
         output_file = tmp_path / "results.json"
-        result = subprocess.run(
+        subprocess.run(
             [
                 sys.executable, "-m", "agentci", "eval",
                 "--agent", str(FIXTURES / "failing_agent.py"),

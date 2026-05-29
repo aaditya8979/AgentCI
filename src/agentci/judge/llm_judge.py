@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 from enum import Enum
-from typing import Any
 
 from ..models.scenario import JudgeResponse, ScoreBreakdown
 from .prompts import JUDGE_SYSTEM_PROMPT, build_judge_prompt

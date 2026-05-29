@@ -1,14 +1,24 @@
 """Tests for the adoption layer modules."""
 import json
-import os
-import tempfile
-from pathlib import Path
 
-import pytest
+from agentci.cache.output_cache import OutputCache
+from agentci.enterprise.approval import (
+    evaluate_policy, is_approval_comment, check_approver_authorized,
+    ApprovalAction,
+)
+from agentci.enterprise.diff_sampler import categorize_file, sample_scenarios, FileCategory
+from agentci.enterprise.framework_detector import detect_framework
+from agentci.enterprise.governance import create_attestation, save_attestation, load_and_verify
+from agentci.enterprise.keys import resolve_key, check_all_keys, _load_dotenv
+from agentci.enterprise.scenario_gen import (
+    extract_constraints, generate_from_system_prompt,
+    generate_from_logs, anonymize_pii, write_scenarios,
+)
+from agentci.enterprise.severity import SeverityTier
+from agentci.judge.calibration import compute_spearman, compute_calibration, GoldenEntry, CalibrationProfile
+
 
 # ── Framework Detector ───────────────────────────────────────────────────────
-
-from agentci.enterprise.framework_detector import detect_framework, DetectionResult
 
 
 class TestFrameworkDetector:
@@ -44,11 +54,6 @@ class TestFrameworkDetector:
 
 
 # ── Scenario Generation ──────────────────────────────────────────────────────
-
-from agentci.enterprise.scenario_gen import (
-    extract_constraints, generate_from_system_prompt,
-    generate_from_logs, anonymize_pii, write_scenarios,
-)
 
 
 class TestConstraintExtraction:
@@ -124,8 +129,6 @@ class TestPIIAnonymization:
 
 # ── Keys ─────────────────────────────────────────────────────────────────────
 
-from agentci.enterprise.keys import resolve_key, check_all_keys, _load_dotenv
-
 
 class TestKeys:
     def test_resolve_from_env(self, monkeypatch):
@@ -167,8 +170,6 @@ class TestKeys:
 
 # ── Diff Sampler ─────────────────────────────────────────────────────────────
 
-from agentci.enterprise.diff_sampler import categorize_file, parse_diff, sample_scenarios, FileCategory
-
 
 class TestDiffSampler:
     def test_categorize_system_prompt(self):
@@ -191,8 +192,6 @@ class TestDiffSampler:
 
 
 # ── Output Cache ─────────────────────────────────────────────────────────────
-
-from agentci.cache.output_cache import OutputCache
 
 
 class TestOutputCache:
@@ -223,8 +222,6 @@ class TestOutputCache:
 
 # ── Governance ───────────────────────────────────────────────────────────────
 
-from agentci.enterprise.governance import create_attestation, save_attestation, load_and_verify
-
 
 class TestGovernance:
     def test_create_attestation(self):
@@ -249,12 +246,6 @@ class TestGovernance:
 
 # ── Approval ─────────────────────────────────────────────────────────────────
 
-from agentci.enterprise.approval import (
-    evaluate_policy, is_approval_comment, check_approver_authorized,
-    ApprovalAction, DEFAULT_POLICIES,
-)
-from agentci.enterprise.severity import SeverityTier
-
 
 class TestApproval:
     def test_cosmetic_warns(self):
@@ -278,8 +269,6 @@ class TestApproval:
 
 
 # ── Calibration ──────────────────────────────────────────────────────────────
-
-from agentci.judge.calibration import compute_spearman, compute_calibration, GoldenEntry, CalibrationProfile
 
 
 class TestCalibration:

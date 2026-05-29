@@ -4,8 +4,6 @@ Tests for the enterprise severity classifier and agent adapters.
 import pytest
 
 from agentci.enterprise.severity import (
-    BehavioralDimension,
-    Reversibility,
     SeverityTier,
     RecommendedAction,
     classify_severity,

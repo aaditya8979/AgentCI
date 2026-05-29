@@ -78,7 +78,7 @@ class MarkdownReporter:
                 if reg.is_regression:
                     status = f"❌ (p={reg.p_value:.3f})"
                 elif not r.passed:
-                    status = f"❌"
+                    status = "❌"
                 else:
                     status = f"✅ (p={reg.p_value:.2f})"
 
@@ -95,7 +95,7 @@ class MarkdownReporter:
             lines.append("")
 
             for r in failed_results:
-                lines.append(f"<details>")
+                lines.append("<details>")
                 lines.append(
                     f"<summary><b>{r.scenario_id}</b> — "
                     f"Score: {r.weighted_score:.2f}</summary>"

@@ -228,7 +228,7 @@ def eval(agent, scenarios, function, judges, runs, threshold, output, config, fm
     # ── DRY RUN MODE ─────────────────────────────────────────────────────
     if dry_run:
         if not quiet:
-            click.echo(f"  Mode: DRY RUN (no judge calls)\n")
+            click.echo("  Mode: DRY RUN (no judge calls)\n")
 
         start_time = time.time()
         for i, scenario in enumerate(scenario_list, 1):
@@ -451,7 +451,7 @@ def baseline():
 @click.option("--dir", "baseline_dir", default=DEFAULT_BASELINE_DIR, help="Baseline storage directory.")
 def baseline_list(baseline_dir):
     """List all stored scenario baselines."""
-    store = BaselineStore(baseline_dir)
+    BaselineStore(baseline_dir)
     base_path = Path(baseline_dir)
 
     if not base_path.exists():
@@ -826,10 +826,10 @@ def attest_verify(attestation_file):
 
     att, is_valid = load_and_verify(attestation_file)
     if is_valid:
-        console.print(f"  ✅ [green]VALID[/green] — attestation signature verified")
+        console.print("  ✅ [green]VALID[/green] — attestation signature verified")
         console.print(f"  Run: {att.run_id}  Score: {att.overall_score}  Outcome: {att.outcome}")
     else:
-        console.print(f"  ❌ [red]TAMPERED[/red] — signature does not match")
+        console.print("  ❌ [red]TAMPERED[/red] — signature does not match")
         sys.exit(1)
 
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -177,7 +177,7 @@ def sample_scenarios(
             reason_parts.append(f"dimension '{dim}' affected by diff")
         if any(cat in str(fc.value) for fc in diff_cats):
             relevance += 0.3
-            reason_parts.append(f"category matches diff area")
+            reason_parts.append("category matches diff area")
         if diff_str == "hard":
             relevance += 0.1
             reason_parts.append("high difficulty")

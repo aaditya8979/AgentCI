@@ -9,7 +9,6 @@ Run with: pytest tests/test_integration.py -m integration
 """
 import json
 import os
-import uuid
 
 import pytest
 
@@ -58,7 +57,6 @@ class TestWebhookToDatabase:
     def integration_client(self, webhook_secret):
         """Create a test client backed by a real database."""
         from contextlib import asynccontextmanager
-        from unittest.mock import MagicMock
 
         from agentci.api.main import app
 

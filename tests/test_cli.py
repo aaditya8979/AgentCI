@@ -2,9 +2,6 @@
 Tests for the Phase 2 CLI: validate, dry-run, --format json, baseline commands.
 """
 import json
-import tempfile
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner

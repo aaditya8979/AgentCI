@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..models.scenario import JudgeResponse, ScoreBreakdown
+from ..models.scenario import JudgeResponse
 from .llm_judge import LLMJudge, JudgeModel
 
 logger = logging.getLogger(__name__)

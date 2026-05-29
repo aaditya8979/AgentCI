@@ -5,10 +5,8 @@ Tests the full flow: load agent → run scenario → judge (mocked) → stats �
 No API keys required — uses mock judges.
 """
 import json
-import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 # ── 1. Create a temporary agent and scenario ──
 
@@ -72,8 +70,7 @@ def make_test_scenarios(tmp_dir: Path) -> Path:
 
 def main():
     from agentci.runner.agent_runner import AgentRunner
-    from agentci.judge.consensus import ConsensusPanel, ConsensusResult
-    from agentci.models.scenario import Scenario, ScenarioResult, JudgeResponse, ScoreBreakdown
+    from agentci.models.scenario import Scenario, ScenarioResult
     from agentci.stats.significance import is_regression
     from agentci.stats.baseline import BaselineStore
     from agentci.reporter.console import ConsoleReporter
@@ -178,7 +175,7 @@ def main():
         md_path = tmp_dir / "report.md"
         md_path.write_text(md)
         print(f"\n📄 Markdown report generated ({len(md)} chars)")
-        print(f"   Preview (first 500 chars):")
+        print("   Preview (first 500 chars):")
         print(f"   {'─' * 50}")
         print(md[:500])
         print(f"   {'─' * 50}")

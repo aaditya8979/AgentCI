@@ -2,8 +2,6 @@
 Tests for the baseline storage system.
 """
 import json
-import tempfile
-from pathlib import Path
 
 import pytest
 from agentci.stats.baseline import BaselineStore

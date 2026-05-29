@@ -4,7 +4,6 @@ Tests for the statistical significance engine.
 Validates Welch's t-test regression detection and Cohen's d effect size
 classification against known distributions.
 """
-import pytest
 from agentci.stats.significance import is_regression, cohens_d, Severity
 
 

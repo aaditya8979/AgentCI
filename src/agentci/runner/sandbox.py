@@ -16,9 +16,8 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
 
-from ..models.scenario import Message, Scenario, ScenarioTrace, TraceStep
+from ..models.scenario import Scenario, ScenarioTrace, TraceStep
 
 logger = logging.getLogger(__name__)
 

@@ -14,11 +14,10 @@ Fallback: exact hash matching (zero additional API cost).
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ Always follows policy, never hallucinates, maintains appropriate tone.
 def run(input_data: dict) -> dict:
     """Process input and return a policy-compliant response."""
     messages = input_data.get("messages", [])
-    context = input_data.get("context", {})
+    input_data.get("context", {})
 
     if not messages:
         return {"response": "Hello! How can I help you today?"}

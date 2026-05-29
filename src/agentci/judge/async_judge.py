@@ -10,7 +10,6 @@ import json
 import logging
 import time
 import uuid
-from typing import Any
 
 import httpx
 
@@ -90,7 +89,7 @@ class AsyncLLMJudge:
         input_tokens = (len(JUDGE_SYSTEM_PROMPT) + len(user_prompt)) // 4
         output_tokens = len(raw) // 4
 
-        from .pricing import compute_cost, format_cost
+        from .pricing import compute_cost
         cost_usd = compute_cost(self.provider, self.model, input_tokens, output_tokens)
 
         logger.info(

@@ -8,8 +8,10 @@ Verifies:
 - Fallback hash mode when no embedding provider
 - Hit rate calculation
 """
+import time
+
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from agentci.cache.output_cache import OutputCache, CacheStats
 
@@ -40,7 +42,7 @@ class TestHashMode:
     def test_expired_entry_is_miss(self):
         cache = OutputCache(ttl=0, enable_semantic=False)
         cache.put("scenario_001", "v1", "text", {"score": 0.9})
-        import time; time.sleep(0.01)
+        time.sleep(0.01)
         result = cache.get("scenario_001", "v1", "text")
         assert result is None
 
@@ -121,7 +123,7 @@ class TestCacheMaintenance:
         cache = OutputCache(ttl=0, enable_semantic=False)
         cache.put("s1", "v1", "text1", {"score": 0.9})
         cache.put("s2", "v1", "text2", {"score": 0.8})
-        import time; time.sleep(0.01)
+        time.sleep(0.01)
         evicted = cache.evict_expired()
         assert evicted == 2
 

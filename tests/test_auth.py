@@ -1,9 +1,7 @@
 """
 Tests for API authentication middleware.
 """
-import os
 import pytest
-from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 
@@ -15,7 +13,7 @@ def api_keys():
 @pytest.fixture
 def app_with_auth(api_keys):
     """Create a FastAPI app with auth middleware for testing."""
-    from fastapi import FastAPI, Request, Response
+    from fastapi import FastAPI, Request
 
     app = FastAPI()
 
