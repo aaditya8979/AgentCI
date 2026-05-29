@@ -118,6 +118,6 @@ class MarkdownReporter:
 
         # Footer
         lines.append("---")
-        lines.append("*Powered by AgentCI v0.1.0*")
+        lines.append("*Powered by [AgentCI](https://github.com/aaditya8979/AgentCI) v0.2.0*")
 
         return "\n".join(lines)

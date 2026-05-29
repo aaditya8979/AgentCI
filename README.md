@@ -1,69 +1,145 @@
 <div align="center">
-  <img src="dashboard/public/favicon.ico" width="120" alt="AgentCI Logo" />
-  <h1>⚡ AgentCI</h1>
-  <p><b>Enterprise-Grade CI/CD Quality Gate for LLM Agents</b></p>
-  
-  [![PyPI version](https://badge.fury.io/py/agentci.svg)](https://badge.fury.io/py/agentci)
+  <img src="assets/logo.png" width="140" alt="AgentCI Logo" />
+  <h1>AgentCI</h1>
+  <p><b>CI/CD Quality Gate for LLM Agents</b></p>
+  <p>Catch regressions, hallucinations, and safety violations before they reach production.</p>
+
+  [![CI](https://github.com/aaditya8979/AgentCI/actions/workflows/ci.yml/badge.svg)](https://github.com/aaditya8979/AgentCI/actions/workflows/ci.yml)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-  [![Tests](https://github.com/agentci/agentci/actions/workflows/publish.yml/badge.svg)](https://github.com/agentci/agentci/actions)
+  [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
   [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
+  <br/>
+
+  [Install](#-installation) · [Quick Start](#-quick-start) · [GitHub App](https://github.com/apps/agent-ci-aaditya) · [Architecture](#-architecture) · [Self-Hosting](#-self-hosting) · [Contributing](CONTRIBUTING.md)
 </div>
 
-<br>
-
-**AgentCI** is a continuous integration framework designed specifically for LLM-powered agents. It acts as an automated quality gate in your CI/CD pipeline, running multi-judge consensus panels against your agent's behavior to catch regressions, hallucinations, and safety violations *before* they reach production.
+<br/>
 
 ---
 
-## 🌟 Why AgentCI?
+## The Problem
 
-Traditional CI/CD tools test code execution. AgentCI tests **behavioral outcomes**. 
+You changed a system prompt. You swapped a model. You updated a RAG pipeline. **Standard unit tests can't tell you if your agent started hallucinating, turned aggressive, or broke compliance policies.**
 
-When you change a system prompt, update a RAG pipeline, or switch underlying models, standard unit tests cannot reliably tell you if the agent's tone became aggressive or if it started hallucinating APIs. AgentCI solves this using LLM-as-a-Judge panels with statistical rigor.
+AgentCI solves this by running **LLM-as-a-Judge evaluation panels** on every pull request — with statistical rigor, not vibes.
 
-### Key Capabilities
+```
+PR Opened → Webhook → Run Agent on Scenarios → 3-Judge Panel → Statistical Analysis → ✅ or ❌ on PR
+```
 
-*   🛡️ **Zero-Cost Local Evaluation**: Run enterprise-grade judges locally via **Ollama** (e.g., `llama3.1:70b`) or bring your own keys (OpenAI, Anthropic, Google).
-*   ⚖️ **Multi-Judge Consensus**: Eliminates single-judge bias using median aggregation and Inter-Judge Agreement (IJA) tiebreakers.
-*   🔍 **Diff-Aware Sampling**: Automatically analyzes your PR diffs to prioritize scenarios related to the changed code/prompts.
-*   ⚡ **Semantic Output Caching**: Saves thousands of dollars by reusing judge scores for identical agent outputs.
-*   📜 **Enterprise Governance**: Cryptographically signed attestations, severity-tiered approval workflows (`/agentci approve`), and compliance templates (EU AI Act, HIPAA, SOC 2).
-*   🚀 **Zero-Config Bootstrap**: Automatically detects your framework (LangChain, LlamaIndex, AutoGen) and generates starter scenarios in seconds.
+---
+
+## ✨ Key Features
+
+| Feature | Description |
+|---------|-------------|
+| ⚖️ **Multi-Judge Consensus** | 3 judges from different LLM families (GPT-4o, Claude, Gemini) — median aggregation eliminates single-judge bias |
+| 📉 **Statistical Regression Detection** | Welch's t-test + Cohen's d effect size against baseline scores — not "the score went down," but "it went down with p=0.003" |
+| 🔄 **Two-Tier Evaluation** | Cheap Tier 1 screening (GPT-4o-mini) with full panel escalation only for ambiguous cases — 2x cost reduction |
+| 🧠 **Semantic Output Caching** | Cosine-similarity matching of agent outputs — if the agent said the same thing before, reuse the score |
+| 🔒 **Safety & Compliance** | Built-in scenarios for hallucination detection, PII leakage, boundary testing, and policy violations |
+| 📡 **Real-Time Dashboard** | WebSocket-powered live progress, trend charts, run history, and per-scenario drill-down |
+| 🐳 **One-Command Deploy** | Full stack via Docker Compose: API, Worker, Dashboard, PostgreSQL, Redis, Temporal |
+| 🔗 **GitHub App** | [Install on your repo](https://github.com/apps/agent-ci-aaditya) — evaluations trigger automatically on every PR |
+
+---
+
+## 🚀 Installation
+
+```bash
+pip install agentci
+```
+
+Requires Python 3.11+. For the self-hosted server stack, see [Self-Hosting](#-self-hosting).
+
+---
+
+## ⚡ Quick Start
+
+### 1. Create evaluation scenarios
+
+```json
+// eval/scenarios.json
+[
+  {
+    "scenario_id": "refund_policy",
+    "description": "Customer asks for a refund — agent must follow the 30-day policy",
+    "category": "compliance",
+    "conversation": [
+      {"role": "user", "content": "I bought this 2 weeks ago and it's broken. I want my money back."}
+    ],
+    "rubric": {
+      "criteria": [
+        {"name": "policy_compliance", "weight": 0.4, "description": "Correctly applies 30-day return policy"},
+        {"name": "no_hallucination", "weight": 0.3, "description": "Does not invent policies"},
+        {"name": "empathy", "weight": 0.15, "description": "Acknowledges frustration"},
+        {"name": "accuracy", "weight": 0.15, "description": "Provides correct next steps"}
+      ],
+      "passing_threshold": 0.85
+    }
+  }
+]
+```
+
+### 2. Run evaluation from CLI
+
+```bash
+agentci eval \
+  --agent src/agent.py \
+  --scenarios eval/scenarios.json \
+  --format rich
+```
+
+### 3. See the results
+
+```
+┌──────────────────────────────────────────────────────┐
+│                 AgentCI Eval Report                   │
+├──────────────┬───────┬──────────┬───────┬────────────┤
+│ Scenario     │ Score │ Baseline │ Delta │ Status     │
+├──────────────┼───────┼──────────┼───────┼────────────┤
+│ refund_policy│ 0.92  │ 0.88     │ +0.04 │ ✅ PASS    │
+│ safety_check │ 0.97  │ 0.95     │ +0.02 │ ✅ PASS    │
+│ hallucination│ 0.45  │ 0.91     │ -0.46 │ ❌ REGRESS │
+│              │       │          │       │ p=0.003    │
+└──────────────┴───────┴──────────┴───────┴────────────┘
+  Overall: ❌ FAILED (1 regression detected)
+  Cohen's d: 2.31 (large effect) | p-value: 0.003
+```
 
 ---
 
 ## 🏗️ Architecture
 
-AgentCI operates seamlessly between your code repository and your deployment target, orchestrated via Temporal for durability.
+AgentCI is built as a distributed system orchestrated by [Temporal](https://temporal.io/) for durability and fault tolerance.
 
 ```mermaid
 graph TD
-    classDef git fill:#24292e,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef agentci fill:#4f46e5,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef judges fill:#059669,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef db fill:#0284c7,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef git fill:#24292e,stroke:#fff,stroke-width:2px,color:#fff
+    classDef agentci fill:#4f46e5,stroke:#fff,stroke-width:2px,color:#fff
+    classDef judges fill:#059669,stroke:#fff,stroke-width:2px,color:#fff
+    classDef db fill:#0284c7,stroke:#fff,stroke-width:2px,color:#fff
 
-    PR[Pull Request / Push]:::git -->|Webhook| ACI_API(AgentCI API):::agentci
-    
-    subgraph "AgentCI Engine (Temporal Orchestrated)"
-        ACI_API --> DiffSampler[Diff-Aware Sampler]
-        DiffSampler --> Runner[Agent Runner Sandbox]
-        Runner --> Cache{Semantic Output Cache}
-        Cache -->|Hit| Aggregator
-        Cache -->|Miss| Panel[Multi-Judge Consensus Panel]
-        Panel --> Aggregator[Statistical Aggregator]
+    PR["Pull Request"]:::git -->|Webhook| API["AgentCI API"]:::agentci
+
+    subgraph "AgentCI Engine — Temporal Orchestrated"
+        API --> Runner["Agent Runner"]
+        Runner --> Cache{"Semantic Cache"}
+        Cache -->|Hit| Agg["Statistical Aggregator"]
+        Cache -->|Miss| Panel["3-Judge Consensus Panel"]
+        Panel --> Agg
     end
-    
+
     subgraph "Judge Providers"
-        Panel -->|Judge 1| Ollama[Local Ollama]:::judges
-        Panel -->|Judge 2| GPT[OpenAI / GPT-4o]:::judges
-        Panel -->|Judge 3| Claude[Anthropic / Claude 3.5]:::judges
+        Panel -->|Judge 1| GPT["OpenAI GPT-4o"]:::judges
+        Panel -->|Judge 2| Claude["Anthropic Claude"]:::judges
+        Panel -->|Judge 3| Gemini["Google Gemini"]:::judges
     end
 
-    Aggregator --> DB[(PostgreSQL)]:::db
-    Aggregator --> Attest[Governance / Attestation]
-    Attest --> GithubApp[GitHub PR Comment & Checks]:::git
-    DB --> Dashboard[Real-time Web Dashboard]:::agentci
+    Agg --> DB[("PostgreSQL")]:::db
+    Agg --> GH["GitHub Check Run"]:::git
+    DB --> Dash["Real-Time Dashboard"]:::agentci
 ```
 
 ### The Evaluation Pipeline
@@ -71,140 +147,291 @@ graph TD
 ```mermaid
 sequenceDiagram
     participant GitHub
-    participant AgentCI
+    participant AgentCI API
+    participant Temporal
     participant Agent
-    participant Judges
-    
-    GitHub->>AgentCI: Webhook (Code/Prompt Changed)
-    AgentCI->>AgentCI: Select Scenarios (Diff-Aware)
-    loop For each Scenario
-        AgentCI->>Agent: Inject Context & Conversation
-        Agent-->>AgentCI: Return Output & Trace
-        AgentCI->>Judges: Evaluate Output vs Rubric
-        Judges-->>AgentCI: Return Score Breakdown
+    participant Judge Panel
+
+    GitHub->>AgentCI API: Webhook (PR opened/updated)
+    AgentCI API->>AgentCI API: Verify HMAC-SHA256 signature
+    AgentCI API->>Temporal: Start EvalRunWorkflow
+
+    loop For each scenario
+        Temporal->>Agent: Run scenario
+        Agent-->>Temporal: Output + trace
+        Temporal->>Judge Panel: Evaluate (3 judges in parallel)
+        Judge Panel-->>Temporal: Consensus scores
     end
-    AgentCI->>AgentCI: Calculate P-Value vs Baseline
-    AgentCI-->>GitHub: Post Markdown Report & Status
+
+    Temporal->>Temporal: Welch's t-test vs baseline
+    Temporal->>GitHub: Post Check Run + PR comment
+    Temporal->>AgentCI API: Update dashboard via WebSocket
+```
+
+### How the Judge Panel Works
+
+```
+                    ┌─────────────┐
+                    │   Agent     │
+                    │   Output    │
+                    └──────┬──────┘
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+         ┌─────────┐ ┌─────────┐ ┌─────────┐
+         │  GPT-4o │ │ Claude  │ │ Gemini  │
+         │ Judge 1 │ │ Judge 2 │ │ Judge 3 │
+         └────┬────┘ └────┬────┘ └────┬────┘
+              │            │            │
+              └────────────┼────────────┘
+                           ▼
+                   Median Aggregation
+                           │
+                     IJA < 0.7?
+                    ╱           ╲
+                  Yes            No
+                  ╱               ╲
+          Tiebreaker           Final Score
+           Judge               (consensus)
+```
+
+Cross-family composition eliminates self-enhancement bias. Median (not mean) resists outlier judges. Inter-Judge Agreement (IJA) triggers a tiebreaker when judges disagree.
+
+---
+
+## 🔗 GitHub App
+
+Install the GitHub App to get automatic evaluations on every pull request:
+
+**👉 [Install AgentCI GitHub App](https://github.com/apps/agent-ci-aaditya)**
+
+Once installed, AgentCI will:
+1. Receive webhook events when PRs are opened or updated
+2. Run your agent against all evaluation scenarios
+3. Judge the outputs using a 3-model consensus panel
+4. Post results as a **Check Run** and **PR comment** with full score breakdown
+
+### What You'll See on Your PR
+
+AgentCI posts a detailed markdown report:
+
+```
+## 🔍 AgentCI Eval Report
+
+**Commit:** `a1b2c3d` | **Suite:** `full` | **Duration:** 2m 34s
+
+### 📊 Overall: ❌ FAILED (0.76)
+
+| Scenario      | Score | Baseline | Delta  | Status          |
+|---------------|-------|----------|--------|-----------------|
+| refund_policy | 0.92  | 0.88     | +0.04  | ✅              |
+| safety_check  | 0.97  | 0.95     | +0.02  | ✅              |
+| hallucination | 0.45  | 0.91     | -0.46  | ❌ (p=0.003)    |
+
+### ❌ Failed Scenarios
+
+<details>
+<summary><b>hallucination</b> — Score: 0.45</summary>
+
+- ❌ **no_hallucination**: 0.20
+- ⚠️ **accuracy**: 0.55
+- ✅ **helpfulness**: 0.85
+
+</details>
 ```
 
 ---
 
-## 🚀 Getting Started
+## 🐳 Self-Hosting
 
-### 1. Installation
+### Prerequisites
 
-Install AgentCI directly via pip (Python 3.10+ required):
+- Docker & Docker Compose v2+
+- At least one LLM API key (OpenAI, Anthropic, or Google)
+- [ngrok](https://ngrok.com) for webhook tunneling (development)
 
-```bash
-pip install agentci
-```
-
-### 2. Initialization
-
-Navigate to your agent's project directory and run the bootstrapper. AgentCI will automatically detect your framework (LangChain, OpenAI, etc.) and generate a configuration.
+### One-Command Deployment
 
 ```bash
-agentci init --github-actions
+# Clone and configure
+git clone https://github.com/aaditya8979/AgentCI.git
+cd AgentCI
+cp .env.example .env
+# Edit .env — set your API keys, webhook secret, etc.
+
+# Start everything
+cd docker
+docker compose up -d --build
 ```
 
-*This will interactively prompt you for your use case, generate evaluation scenarios from your system prompts, create a `.agentci.yml` config, and optionally write a GitHub Actions workflow.*
+This starts 7 services:
 
-### 3. Provide Judge Credentials
+| Service | Port | Purpose |
+|---------|------|---------|
+| **API** | 8000 | REST API + webhook receiver |
+| **Worker** | — | Temporal activity executor |
+| **Dashboard** | 3000 | Next.js real-time UI |
+| **PostgreSQL** | 5432 | Eval runs, scenarios, baselines |
+| **Redis** | 6379 | Pub/sub, caching, rate limiting |
+| **Temporal** | 7233 | Workflow orchestration |
+| **Temporal UI** | 8080 | Workflow inspector |
 
-Configure API keys for the LLMs acting as judges (or rely on Ollama for zero-cost local evaluation).
+### Health Check
 
 ```bash
-agentci keys set --provider openai
-agentci keys set --provider anthropic
-# Or verify your existing setup:
-agentci keys check
+curl http://localhost:8000/health | python3 -m json.tool
 ```
 
-### 4. Run an Evaluation
+```json
+{
+  "status": "ok",
+  "checks": {
+    "api": "ok",
+    "database": "ok",
+    "redis": "ok",
+    "temporal": "ok"
+  }
+}
+```
 
-Execute your first evaluation locally:
+### Connecting to GitHub
 
 ```bash
-agentci eval -a src/agent.py -s .agentci/scenarios.json
+# Start a tunnel for webhooks
+ngrok http 8000
+
+# Run the verification script
+./scripts/verify_webhook.sh
 ```
 
-For a dry-run to verify the pipeline without spending API credits:
-
-```bash
-agentci eval -a src/agent.py -s .agentci/scenarios.json --dry-run
-```
+See the full [Self-Hosting Guide](docs/self-hosting.md) for GitHub App creation, environment configuration, and production deployment.
 
 ---
 
-## 📦 Community Marketplace & Starter Packs
-
-Don't start from scratch. AgentCI includes production-ready scenario packs for common enterprise domains.
+## 📊 CLI Reference
 
 ```bash
-# Load a domain-specific starter pack
-agentci starter-pack --domain fintech -o .agentci/scenarios.json
+# Run evaluation
+agentci eval --agent src/agent.py --scenarios eval/scenarios.json --format rich
 
-# Available domains: 
-# fintech, healthcare, legal, coding, customer_support
-```
+# JSON output for CI pipelines
+agentci eval --agent src/agent.py --scenarios eval/scenarios.json --format json --output results.json
 
-You can also generate highly specific scenarios directly from your production logs or system prompts:
+# Generate scenarios from a system prompt
+agentci generate --prompt src/prompts/system.txt --count 10 --output eval/scenarios.json
 
-```bash
-agentci generate --system-prompt src/prompts/system.txt --count 20 -o .agentci/scenarios.json
-```
+# Compare two evaluation runs (regression detection)
+agentci compare baseline.json current.json
 
----
-
-## 🛡️ Enterprise Compliance
-
-AgentCI comes with built-in compliance templates to ensure your AI agents adhere to regulatory standards.
-
-```bash
-# View available compliance frameworks
-agentci compliance list
-
-# Show requirements for the EU AI Act (High-Risk)
-agentci compliance show eu_ai_act_high_risk
-```
-
-Generates cryptographically signed attestations for every evaluation run, proving that your agent passed its quality gates before deployment:
-
-```bash
-agentci attest --run-id 123e4567-e89b-12d3-a456-426614174000 -o audit/attestation.json
-agentci attest-verify --file audit/attestation.json
-```
-
----
-
-## 📊 Dashboard & Self-Hosting
-
-For enterprise deployments, run the full AgentCI distributed stack including the API, PostgreSQL, Redis, Temporal Server, and the Next.js Dashboard.
-
-```bash
-# Start the full adoption stack
-docker compose -f docker/docker-compose-adoption.yml up -d
-
-# Check service health
+# Check system status
 agentci status
 ```
 
-*The beautiful interactive dashboard will be available at `http://localhost:3000`.*
+---
+
+## 🔧 Configuration
+
+Create a `.agentci.yml` in your repo root:
+
+```yaml
+# .agentci.yml
+version: "1"
+agent_entry: src/agent.py        # Path to your agent
+agent_function: run               # Function to call
+scenarios_path: eval/scenarios    # Scenarios dir or file
+num_runs: 3                       # Runs per scenario for stability
+
+judges:
+  models:
+    - gpt-4o
+    - claude-sonnet-4-20250514
+    - gemini-2.5-pro
+  temperature: 0.1
+  ija_threshold: 0.7              # Tiebreaker if judges disagree
+
+baselines:
+  min_score: 0.85                 # Minimum passing score
+  comparison: last_5_runs         # Compare against recent history
+  statistical_test: welch_t_test
+  significance_level: 0.05
+
+triggers:
+  paths:
+    - "**/*.py"                   # Only eval when Python files change
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run the full test suite (164 tests)
+python -m pytest tests/ -v
+
+# Run with coverage
+python -m pytest tests/ --cov=agentci --cov-report=html
+
+# Lint
+ruff check src/ tests/
+```
+
+---
+
+## 📦 Project Structure
+
+```
+AgentCI/
+├── src/agentci/
+│   ├── api/               # FastAPI server (webhook, REST, WebSocket)
+│   │   ├── main.py        # App lifecycle, middleware, health checks
+│   │   ├── webhook.py     # GitHub webhook handler (HMAC-SHA256)
+│   │   ├── routes.py      # REST API (/api/runs, /api/stats, /api/trends)
+│   │   └── ws.py          # WebSocket for live eval progress
+│   ├── judge/             # LLM-as-a-Judge engine
+│   │   ├── llm_judge.py   # Single judge implementation
+│   │   ├── async_judge.py # Async judge with cost tracking
+│   │   ├── consensus.py   # Multi-judge median consensus
+│   │   └── async_consensus.py  # Parallel consensus + tiered eval
+│   ├── workflows/         # Temporal orchestration
+│   │   ├── eval_workflow.py    # EvalRunWorkflow + ScenarioEvalWorkflow
+│   │   ├── activities.py       # DB writes, agent runs, judge calls
+│   │   └── worker.py          # Worker with graceful shutdown
+│   ├── db/                # PostgreSQL (asyncpg)
+│   │   ├── connection.py  # Singleton pool management
+│   │   ├── queries.py     # All SQL queries (typed)
+│   │   └── migrations/    # Schema migrations
+│   ├── stats/             # Statistical analysis
+│   │   ├── significance.py    # Welch's t-test, Cohen's d
+│   │   └── baseline.py        # Baseline comparison strategies
+│   ├── reporter/          # Output formatting
+│   │   ├── github.py      # GitHub App client (JWT + installation tokens)
+│   │   ├── markdown.py    # PR comment generator
+│   │   └── console.py     # Rich terminal output
+│   ├── cache/             # Redis + semantic caching
+│   ├── runner/            # Agent execution sandbox
+│   ├── models/            # Pydantic models
+│   └── cli.py             # Click CLI
+├── dashboard/             # Next.js real-time dashboard
+├── docker/                # Docker Compose stack
+├── tests/                 # 164 tests (unit + integration)
+└── scripts/               # Deployment & verification scripts
+```
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to set up the development environment, run tests, and submit Pull Requests.
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for setup instructions, code style, and PR guidelines.
 
 ```bash
-# Set up for development
-git clone https://github.com/agentci/agentci.git
-cd agentci
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-pytest tests/
+git clone https://github.com/aaditya8979/AgentCI.git
+cd AgentCI
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[all]"
+pytest tests/ -v
 ```
 
 ---
@@ -212,3 +439,9 @@ pytest tests/
 ## 📄 License
 
 AgentCI is released under the [MIT License](LICENSE).
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ for the LLM engineering community</sub>
+</div>

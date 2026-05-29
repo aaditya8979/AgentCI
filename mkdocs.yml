@@ -1,0 +1,81 @@
+site_name: AgentCI
+site_url: https://aaditya8979.github.io/AgentCI/
+site_description: CI/CD Quality Gate for LLM Agents
+site_author: Aaditya Agarwal
+repo_url: https://github.com/aaditya8979/AgentCI
+repo_name: aaditya8979/AgentCI
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.instant
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - toc.follow
+    - search.highlight
+  icon:
+    repo: fontawesome/brands/github
+  logo: assets/logo.png
+  favicon: assets/logo.png
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Configuration: getting-started/configuration.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Judge Panel: architecture/judge-panel.md
+    - Statistical Analysis: architecture/statistics.md
+  - Self-Hosting:
+    - Docker Compose: self-hosting/docker.md
+    - GitHub App Setup: self-hosting/github-app.md
+    - Environment Variables: self-hosting/environment.md
+  - CLI Reference: cli-reference.md
+  - API Reference: api-reference.md
+  - Contributing: contributing.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets
+  - toc:
+      permalink: true
+  - tables
+  - attr_list
+  - md_in_html
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/aaditya8979/AgentCI
