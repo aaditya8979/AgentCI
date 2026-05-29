@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentci"
+name = "agentci-aadi"
 version = "0.2.0"
 description = "Enterprise-Grade CI/CD Quality Gate for LLM Agents"
 readme = "README.md"
